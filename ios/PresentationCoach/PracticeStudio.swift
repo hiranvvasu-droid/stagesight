@@ -57,7 +57,60 @@ final class PracticeStudio: ObservableObject {
     @Published var overlays = false
     @Published var speechEnabled = true
     @Published var liveEnabled = false
-    @Published var accessCode = ""
+    @Published var showSignIn = false
+    @Published private(set) var accountEmail: String?
+    private var accountSession: AccountSession?
+    private var accountGeneration = UUID()
+
+    private struct AccountSession: Decodable {
+        let access_token: String
+        let refresh_token: String
+        let expires_in: Double
+    }
+    private var accountExpiresAt = Date.distantPast
+
+    func signIn(email: String, password: String) async throws {
+        let session = try await requestAccount(grant: "password", fields: ["email": email, "password": password])
+        setAccount(session)
+        accountEmail = email
+        showSignIn = false
+    }
+
+    func signOut() {
+        accountGeneration = UUID()
+        accountSession = nil
+        accountEmail = nil
+    }
+
+    private func setAccount(_ session: AccountSession) {
+        accountSession = session
+        accountExpiresAt = Date().addingTimeInterval(session.expires_in)
+    }
+
+    private func accountToken() async throws -> String {
+        guard let session = accountSession else { throw StudioError("Sign in to StageSight to use coaching.") }
+        if accountExpiresAt.timeIntervalSinceNow > 60 { return session.access_token }
+        let generation = accountGeneration
+        let renewed = try await requestAccount(grant: "refresh_token", fields: ["refresh_token": session.refresh_token])
+        guard generation == accountGeneration else { throw StudioError("Sign in again to use coaching.") }
+        setAccount(renewed)
+        return renewed.access_token
+    }
+
+    private func requestAccount(grant: String, fields: [String: String]) async throws -> AccountSession {
+        let url = URL(string: "https://ezstwuzfupvsdiuzvdvv.supabase.co/auth/v1/token?grant_type=" + grant)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("sb_publishable_k8JR4vZnwCvnnXVRboSXgA_3CYgDIE6", forHTTPHeaderField: "apikey")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(fields)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw StudioError(grant == "password" ? "Couldn’t sign in. Check your email and password." : "Session expired. Sign out and sign in again.")
+        }
+        return try JSONDecoder().decode(AccountSession.self, from: data)
+    }
     @Published private(set) var coachingCue = ""
     @Published private(set) var recordingDate: Date?
     @Published private(set) var isRecording = false
@@ -196,11 +249,11 @@ final class PracticeStudio: ObservableObject {
             coachingCue = ""
             if liveEnabled, let base = backendURL {
                 coachingCue = "Connecting live coaching…"
-                let code = accessCode.trimmingCharacters(in: .whitespacesAndNewlines)
                 coachingTask = Task { [weak self] in
                     guard let self else { return }
                     do {
-                        try await self.coach.start(base: base, code: code) { [weak self] cue in
+                        let token = try await self.accountToken()
+                        try await self.coach.start(base: base, token: token) { [weak self] cue in
                             self?.coachingCue = cue
                         }
                     } catch {
@@ -484,14 +537,11 @@ final class PracticeStudio: ObservableObject {
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
-    func report(for session: PracticeSession, accessCode: String) async throws {
+    func report(for session: PracticeSession) async throws {
         guard let base = backendURL else {
             throw StudioError("The StageSight report service URL is unavailable.")
         }
-        let code = accessCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard code.range(of: "^[a-zA-Z0-9_-]{16,128}$", options: .regularExpression) != nil else {
-            throw StudioError("Enter your StageSight report access code.")
-        }
+        let token = try await accountToken()
         struct Input: Encodable {
             let title: String
             let outline: String
@@ -503,7 +553,7 @@ final class PracticeStudio: ObservableObject {
         request.httpMethod = "POST"
         request.timeoutInterval = 100
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer " + code, forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(Input(title: session.title, outline: session.outline,
                                                          transcript: session.transcript, metrics: session.metrics))
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -514,7 +564,7 @@ final class PracticeStudio: ObservableObject {
             guard let index = updated.firstIndex(where: { $0.id == session.id }) else { return }
             updated[index].report = report
             try save(updated)
-        case 401: throw StudioError("This report access code was rejected.")
+        case 401: throw StudioError("Your session expired. Sign out and sign in again.")
         case 429: throw StudioError("The report service is busy. Try again in a minute.")
         default: throw StudioError("The report service couldn’t generate feedback right now.")
         }

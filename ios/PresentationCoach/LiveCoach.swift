@@ -10,14 +10,14 @@ final class LiveCoach {
                                        channels: 1, interleaved: true)!
     private var converter: AVAudioConverter?
 
-    func start(base: URL, code: String, cue: @escaping @MainActor (String) -> Void) async throws {
+    func start(base: URL, token: String, cue: @escaping @MainActor (String) -> Void) async throws {
         var request = URLRequest(url: base.appending(path: "live-session"))
         request.httpMethod = "POST"
         request.timeoutInterval = 100
-        request.setValue("Bearer " + code, forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw StudioError("Live coaching couldn’t connect. Check your access code and try again.")
+            throw StudioError("Live coaching couldn’t connect. Sign in again and retry.")
         }
         struct Secret: Decodable { let value: String }
         let secret = try JSONDecoder().decode(Secret.self, from: data)

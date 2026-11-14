@@ -11,6 +11,7 @@ struct PresentationCoachApp: App {
             Workspace(studio: studio)
                 .onOpenURL { url in Task { await studio.handle(url) } }
                 .preferredColorScheme(.light)
+                .sheet(isPresented: $studio.showSignIn) { AccountSignIn(studio: studio) }
         }
     }
 }
@@ -79,6 +80,14 @@ private struct Workspace: View {
                 metric("Practice sessions", studio.sessions.count.formatted())
                 metric("Time well spent", "\(Int(studio.sessions.reduce(0) { $0 + $1.duration } / 60)) min")
             }
+            if let email = studio.accountEmail {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(email).font(.subheadline)
+                    Button("Sign out") { studio.signOut() }.disabled(studio.isRecording || studio.isBusy)
+                }.card(.white)
+            } else {
+                Button("Sign in for AI coaching") { studio.showSignIn = true }.buttonStyle(.bordered)
+            }
             Text("Your recordings").font(.title2.bold())
             if studio.sessions.isEmpty {
                 Text("Record your first practice session to see it here.").card(.white)
@@ -109,8 +118,9 @@ private struct Workspace: View {
                     if studio.liveEnabled {
                         Text("Live coaching sends audio from your selected microphone to OpenAI.")
                             .font(.footnote).foregroundStyle(.secondary)
-                        SecureField("StageSight access code", text: $studio.accessCode)
-                            .textFieldStyle(.roundedBorder).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if studio.accountEmail == nil {
+                            Button("Sign in to enable coaching") { studio.showSignIn = true }
+                        }
                     }
                     Toggle("Everyone being recorded knows and has agreed", isOn: $studio.consent)
                     if studio.source == .glasses {
@@ -169,7 +179,7 @@ private struct Workspace: View {
                 Label(studio.isRecording ? "Stop and save" : "Start recording",
                       systemImage: studio.isRecording ? "stop.circle.fill" : "record.circle")
                     .frame(maxWidth: .infinity)
-            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(studio.isBusy || (!studio.isRecording && (!studio.consent || (studio.liveEnabled && studio.accessCode.isEmpty))))
+            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(studio.isBusy || (!studio.isRecording && (!studio.consent || (studio.liveEnabled && studio.accountEmail == nil))))
             if !studio.isRecording && !studio.sessions.isEmpty {
                 Button("Review your sessions") { tab = 2 }
             }
@@ -255,16 +265,17 @@ private struct SessionReview: View {
                 } else if !session.transcript.isEmpty {
                     Text("Generating a report sends your transcript and speaking metrics to StageSight’s cloud service.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    SecureField("Report access code", text: $studio.accessCode).textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if studio.accountEmail == nil {
+                        Button("Sign in to generate a report") { studio.showSignIn = true }
+                    }
                     Button(generating ? "Generating…" : "Generate report") {
                         generating = true
                         Task {
                             defer { generating = false }
-                            do { try await studio.report(for: session, accessCode: studio.accessCode); error = "" }
+                            do { try await studio.report(for: session); error = "" }
                             catch { self.error = error.localizedDescription }
                         }
-                    }.buttonStyle(.borderedProminent).disabled(generating || studio.accessCode.isEmpty)
+                    }.buttonStyle(.borderedProminent).disabled(generating || studio.accountEmail == nil)
                 }
                 Button("Delete recording", role: .destructive) { confirmDelete = true }
                 if !error.isEmpty { Text(error).font(.callout) }
@@ -289,5 +300,44 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(color, in: RoundedRectangle(cornerRadius: 18))
             .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(.black.opacity(0.07)) }
+    }
+}
+
+
+private struct AccountSignIn: View {
+    @ObservedObject var studio: PracticeStudio
+    @State private var email = ""
+    @State private var password = ""
+    @State private var message = ""
+    @State private var busy = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text("Use the same email and password as StageSight on the web.")
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $password).textContentType(.password)
+                if !message.isEmpty { Text(message).foregroundStyle(.secondary) }
+                Button(busy ? "Signing in…" : "Sign in") {
+                    busy = true
+                    Task {
+                        defer { password = ""; busy = false }
+                        do {
+                            try await studio.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+                        } catch { message = error.localizedDescription }
+                    }
+                }.disabled(busy || email.isEmpty || password.isEmpty)
+            }
+            .navigationTitle("StageSight account")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { studio.showSignIn = false }.disabled(busy)
+                }
+            }
+        }.interactiveDismissDisabled(busy)
     }
 }

@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import OpenAI from 'openai';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -8,10 +7,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const apiKey = process.env.OPENAI_API_KEY;
-const accessCode = process.env.STAGESIGHT_ACCESS_CODE;
+const accountURL = 'https://ezstwuzfupvsdiuzvdvv.supabase.co';
+const publishableKey = 'sb_publishable_k8JR4vZnwCvnnXVRboSXgA_3CYgDIE6';
 const openai = apiKey ? new OpenAI({ apiKey, maxRetries: 0, timeout: 25000 }) : null;
-const hash = (value) => createHash('sha256').update(value).digest();
-const accessHash = accessCode ? hash('Bearer ' + accessCode) : null;
 let nextReport = 0;
 let nextLiveSession = 0;
 
@@ -59,13 +57,21 @@ createServer(async (request, response) => {
   const report = request.method === 'POST' && request.url === '/reports';
   const live = request.method === 'POST' && request.url === '/live-session';
   if (!report && !live) return send(response, 404, { error: 'Not found' });
-  if (!openai || !accessHash) return send(response, 503, { error: 'Coaching is unavailable' });
+  if (!openai) return send(response, 503, { error: 'Coaching is unavailable' });
 
   const authorization = request.headers.authorization ?? '';
-  if (!timingSafeEqual(hash(authorization), accessHash)) {
-    return send(response, 401, { error: 'Access code required' });
+  if (!/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) {
+    return send(response, 401, { error: 'Sign in to StageSight' });
   }
   try {
+    const account = await fetch(accountURL + '/auth/v1/user', {
+      headers: { apikey: publishableKey, Authorization: authorization },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (account.status === 401 || account.status === 403) {
+      return send(response, 401, { error: 'Sign in to StageSight again' });
+    }
+    if (!account.ok) return send(response, 503, { error: 'Account verification unavailable' });
     const input = report ? await reportInput(request) : null;
     if (report && !input) return send(response, 400, { error: 'Provide a valid transcript' });
     const now = Date.now();
