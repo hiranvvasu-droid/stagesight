@@ -23,12 +23,11 @@ private struct Workspace: View {
     private enum PracticeStep: Equatable { case source, setup, ready }
     @State private var step = PracticeStep.source
     @State private var showControls = false
-    @State private var showOptions = false
     @Environment(\.openURL) private var openURL
-    private let ink = Color(red: 0.15, green: 0.23, blue: 0.19)
-    private let green = Color(red: 0.23, green: 0.39, blue: 0.30)
+    private let ink = Color(red: 0.17, green: 0.25, blue: 0.22)
+    private let green = Color(red: 0.28, green: 0.44, blue: 0.35)
     private let paper = Color(red: 0.96, green: 0.97, blue: 0.95)
-    private let sage = Color(red: 0.91, green: 0.93, blue: 0.88)
+    private let sage = Color(red: 0.93, green: 0.95, blue: 0.91)
 
     var body: some View {
         TabView(selection: $tab) {
@@ -40,7 +39,7 @@ private struct Workspace: View {
                 .tabItem { Label("My sessions", systemImage: "rectangle.stack") }.tag(2)
         }
         .tint(green)
-        .font(stageBody(15, .body))
+        .font(stageBody(16, .body))
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, studio.isRecording { studio.stop() }
             if phase == .active, tab == 1 { studio.refreshGlassesRegistration() }
@@ -95,9 +94,12 @@ private struct Workspace: View {
             Text("A space to practice, reflect, and grow into your next great presentation.")
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 16) {
-                Image(systemName: "mic.circle.fill")
-                    .font(.system(size: 58)).foregroundStyle(green)
-                    .accessibilityHidden(true)
+                ZStack {
+                    Circle().strokeBorder(green.opacity(0.15)).frame(width: 72, height: 72)
+                    Circle().fill(.white.opacity(0.55)).frame(width: 58, height: 58)
+                    Image(systemName: "mic.fill").font(.system(size: 27, weight: .regular))
+                        .rotationEffect(.degrees(14)).foregroundStyle(green)
+                }.accessibilityHidden(true)
                 Text("Great presentations begin with practice.").font(stageHeading(22, .title2))
                 Button { newPractice() } label: {
                     Label("Start a practice session", systemImage: "arrow.up.right")
@@ -107,6 +109,17 @@ private struct Workspace: View {
                 metric("Practice sessions", studio.sessions.count.formatted())
                 metric("Time well spent", "\(Int(studio.sessions.reduce(0) { $0 + $1.duration } / 60)) min")
             }
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Practice tools").font(stageHeading(22, .title2)).accessibilityAddTraits(.isHeader)
+                practiceTool("Live AI coaching", icon: "sparkles",
+                             description: "Get short tips as you speak. When enabled, audio from your selected microphone is sent to OpenAI.")
+                Divider()
+                practiceTool("Audience direction overlays", icon: "viewfinder",
+                             description: "See boxes around people in the camera view and an estimate of which way they’re facing.")
+                Divider()
+                practiceTool("On-device transcription", icon: "waveform",
+                             description: "See your words as you speak and track your pace, pauses, and estimated filler words.")
+            }.card(.white)
             Text("Your recordings").font(stageHeading(22, .title2))
             if studio.sessions.isEmpty {
                 Text("Record your first practice session to see it here.").card(.white)
@@ -250,7 +263,7 @@ private struct Workspace: View {
                 .font(stageHeading(16, .headline)).foregroundStyle(green)
             if !studio.glassesRegistered {
                 Text("Finish setup in Meta AI, then return to StageSight.")
-                    .font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                    .font(stageBody(15, .subheadline)).foregroundStyle(.secondary)
                 Button {
                     Task { await studio.register() }
                 } label: {
@@ -260,22 +273,34 @@ private struct Workspace: View {
         }.card(sage)
     }
 
-    private var recordingOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            DisclosureGroup("Coaching and overlays", isExpanded: $showOptions) {
-                VStack(alignment: .leading, spacing: 13) {
-                    Toggle("Audience direction overlays", isOn: $studio.overlays)
-                    Toggle("On-device transcription", isOn: $studio.speechEnabled)
-                    Toggle("Live AI coaching", isOn: $studio.liveEnabled)
-                    if studio.liveEnabled {
-                        Text("Live coaching sends audio from your selected microphone to OpenAI.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        if studio.accountEmail == nil {
-                            Button("Sign in to enable coaching") { studio.showSignIn = true }
-                        }
-                    }
-                }.padding(.top, 12)
+    private func practiceTool(_ title: String, icon: String, description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .medium)).foregroundStyle(green)
+                .frame(width: 40, height: 40)
+                .background(sage, in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(stageHeading(17, .headline))
+                Text(description).font(stageBody(15, .subheadline))
+                    .foregroundStyle(.secondary).lineSpacing(2)
             }
+        }
+    }
+
+    private var recordingOptions: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Coaching and overlays").font(stageHeading(20, .title3)).accessibilityAddTraits(.isHeader)
+            Toggle(isOn: $studio.liveEnabled) { Label("Live AI coaching", systemImage: "sparkles") }
+            if studio.liveEnabled {
+                Text("Audio from your selected microphone is sent to OpenAI.")
+                    .font(stageBody(15, .subheadline)).foregroundStyle(.secondary)
+                if studio.accountEmail == nil {
+                    Button("Sign in to enable coaching") { studio.showSignIn = true }
+                }
+            }
+            Toggle(isOn: $studio.overlays) { Label("Audience direction overlays", systemImage: "viewfinder") }
+            Toggle(isOn: $studio.speechEnabled) { Label("On-device transcription", systemImage: "waveform") }
             Divider()
             Toggle("Everyone being recorded knows and has agreed", isOn: $studio.consent)
         }.disabled(studio.isBusy).card(.white)
@@ -295,7 +320,7 @@ private struct Workspace: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(source.rawValue).font(stageHeading(17, .headline))
-                    Text(subtitle).font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                    Text(subtitle).font(stageBody(15, .subheadline)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "arrow.right")
@@ -335,7 +360,7 @@ private struct Workspace: View {
                 if measured.count > 1 {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Speaking pace").font(stageHeading(18, .headline))
-                        Text("Words per minute by rehearsal").font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                        Text("Words per minute by rehearsal").font(stageBody(15, .subheadline)).foregroundStyle(.secondary)
                         Chart(Array(measured.enumerated()), id: \.element.id) { entry in
                             BarMark(x: .value("Rehearsal", "\(entry.offset + 1)"),
                                     y: .value("Words per minute", entry.element.metrics.wpm))
@@ -377,7 +402,7 @@ private struct Workspace: View {
                 Text(session.title).font(stageHeading(17, .headline))
                 Text(session.date.formatted(date: .abbreviated, time: .omitted) + " · " +
                      Duration.seconds(session.duration).formatted(.time(pattern: .minuteSecond)))
-                    .font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                    .font(stageBody(15, .subheadline)).foregroundStyle(.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { sessionTags(session) }
                     VStack(alignment: .leading, spacing: 5) { sessionTags(session) }
@@ -498,12 +523,12 @@ private struct AccountSignIn: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: "record.circle.fill").font(.system(size: 42))
-                            .foregroundStyle(Color(red: 0.23, green: 0.39, blue: 0.30))
+                            .foregroundStyle(Color(red: 0.28, green: 0.44, blue: 0.35))
                             .accessibilityHidden(true)
                         Text("Welcome to StageSight").font(stageHeading(34, .largeTitle))
                         Text("Sign in with your StageSight web account to use live coaching and session reports.")
                             .foregroundStyle(.secondary)
-                    }.card(Color(red: 0.91, green: 0.93, blue: 0.88))
+                    }.card(Color(red: 0.93, green: 0.95, blue: 0.91))
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Email").font(.subheadline.weight(.semibold))
@@ -547,9 +572,9 @@ private struct AccountSignIn: View {
                 }.padding(20).frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
             }
-            .font(stageBody(15, .body))
+            .font(stageBody(16, .body))
             .background(Color(red: 0.96, green: 0.97, blue: 0.95))
-            .tint(Color(red: 0.23, green: 0.39, blue: 0.30))
+            .tint(Color(red: 0.28, green: 0.44, blue: 0.35))
             .navigationTitle("StageSight account")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -561,7 +586,7 @@ private struct AccountSignIn: View {
 }
 
 private func stageHeading(_ size: CGFloat, _ style: Font.TextStyle) -> Font {
-    .custom("Manrope-Regular", size: size, relativeTo: style).weight(.bold)
+    .custom("Manrope-Regular", size: size, relativeTo: style).weight(.semibold)
 }
 
 private func stageBody(_ size: CGFloat, _ style: Font.TextStyle) -> Font {
@@ -580,8 +605,8 @@ private extension View {
 private extension View {
     func sessionTag() -> some View {
         font(stageBody(11, .caption2).weight(.semibold))
-            .foregroundStyle(Color(red: 0.23, green: 0.39, blue: 0.30))
+            .foregroundStyle(Color(red: 0.28, green: 0.44, blue: 0.35))
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Color(red: 0.91, green: 0.93, blue: 0.88), in: Capsule())
+            .background(Color(red: 0.93, green: 0.95, blue: 0.91), in: Capsule())
     }
 }
