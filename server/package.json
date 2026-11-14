@@ -1,0 +1,14 @@
+{
+  "name": "presentation-coach-server",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js"
+  },
+  "dependencies": {
+    "openai": "^7.57.0"
+  }
+}
