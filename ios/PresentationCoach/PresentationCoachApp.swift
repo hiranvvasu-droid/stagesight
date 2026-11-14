@@ -517,77 +517,151 @@ private extension View {
 
 
 private struct AccountSignIn: View {
+    private enum Mode: String, CaseIterable {
+        case signIn = "Sign in"
+        case create = "Create account"
+    }
+
     @ObservedObject var studio: PracticeStudio
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var mode = Mode.signIn
     @State private var email = ""
     @State private var password = ""
     @State private var message = ""
+    @State private var checkEmail = false
     @State private var busy = false
+    private let green = Color(red: 0.28, green: 0.44, blue: 0.35)
+    private let sage = Color(red: 0.93, green: 0.95, blue: 0.91)
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Image(systemName: "record.circle.fill").font(.system(size: 42))
-                            .foregroundStyle(Color(red: 0.28, green: 0.44, blue: 0.35))
-                            .accessibilityHidden(true)
-                        Text("Welcome to StageSight").font(stageHeading(34, .largeTitle))
-                        Text("Sign in with your StageSight web account to use live coaching and session reports.")
-                            .foregroundStyle(.secondary)
-                    }.card(Color(red: 0.93, green: 0.95, blue: 0.91))
-                    VStack(alignment: .leading, spacing: 14) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Email").font(.subheadline.weight(.semibold))
-                            TextField("Email address", text: $email)
-                                .keyboardType(.emailAddress)
-                                .textContentType(.username)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Password").font(.subheadline.weight(.semibold))
-                            SecureField("Your password", text: $password)
-                                .textContentType(.password)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        if !message.isEmpty {
-                            Label(message, systemImage: "exclamationmark.circle")
-                                .font(.footnote).foregroundStyle(.red)
-                        }
-                        Button {
-                            busy = true
-                            message = ""
-                            Task {
-                                defer { busy = false }
-                                do {
-                                    try await studio.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
-                                    password = ""
-                                } catch { message = error.localizedDescription }
+                    if checkEmail {
+                        confirmation.transition(panelTransition)
+                    } else {
+                        header
+                        HStack(spacing: 4) {
+                            ForEach(Mode.allCases, id: \.self) { option in
+                                Button(option.rawValue) { switchMode(to: option) }
+                                    .font(stageBody(15, .subheadline))
+                                    .padding(.vertical, 11)
+                                    .frame(maxWidth: .infinity)
+                                    .background(mode == option ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 10))
+                                    .foregroundStyle(green)
+                                    .buttonStyle(.plain)
+                                    .accessibilityAddTraits(mode == option ? .isSelected : [])
                             }
-                        } label: {
-                            HStack {
-                                if busy { ProgressView().tint(.white) }
-                                Text(busy ? "Signing in…" : "Sign in")
-                            }.frame(maxWidth: .infinity)
-                        }.buttonStyle(.borderedProminent).controlSize(.large)
-                            .disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
-                    }.card(.white)
-                    Label("You’ll stay signed in on this iPhone.", systemImage: "lock.shield")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }.padding(20).frame(maxWidth: 520)
-                    .frame(maxWidth: .infinity)
+                        }.padding(4).background(sage, in: RoundedRectangle(cornerRadius: 14))
+                            .disabled(busy)
+                        form
+                    }
+                }
+                .padding(20).frame(maxWidth: 520).frame(maxWidth: .infinity)
             }
             .font(stageBody(16, .body))
-            .background(Color(red: 0.96, green: 0.97, blue: 0.95))
-            .tint(Color(red: 0.28, green: 0.44, blue: 0.35))
-            .navigationTitle("StageSight account")
+            .background(Color(red: 0.97, green: 0.98, blue: 0.96))
+            .tint(green)
+            .navigationTitle("StageSight")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { studio.showSignIn = false }.disabled(busy)
+                    Button("Close") { studio.showSignIn = false }.disabled(busy)
                 }
             }
         }.interactiveDismissDisabled(busy)
+    }
+
+    private var panelTransition: AnyTransition {
+        reduceMotion ? .opacity : .offset(y: 10).combined(with: .opacity)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "record.circle.fill").font(.system(size: 39))
+                .foregroundStyle(green).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(mode == .signIn ? "Welcome to StageSight" : "Create your StageSight account")
+                    .font(stageHeading(30, .largeTitle)).accessibilityAddTraits(.isHeader)
+                Text(mode == .signIn ? "Use your StageSight account to unlock live coaching and session reports." :
+                     "Use the same email and password on your iPhone and the StageSight website.")
+                    .foregroundStyle(.secondary)
+            }.id(mode).transition(panelTransition)
+        }.card(sage)
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Email").font(.subheadline)
+                TextField("Email address", text: $email)
+                    .keyboardType(.emailAddress).textContentType(.username)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().stageField()
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Password").font(.subheadline)
+                SecureField("Your password", text: $password)
+                    .textContentType(mode == .create ? .newPassword : .password).stageField()
+                if mode == .create {
+                    Text("Use at least 8 characters.").font(.footnote).foregroundStyle(.secondary)
+                        .transition(panelTransition)
+                }
+            }
+            if !message.isEmpty {
+                Label(message, systemImage: "exclamationmark.circle")
+                    .font(.footnote).foregroundStyle(.red)
+            }
+            Button(action: submit) {
+                HStack {
+                    if busy { ProgressView().tint(.white) }
+                    Text(busy ? (mode == .signIn ? "Signing in…" : "Creating account…") : mode.rawValue)
+                }.frame(maxWidth: .infinity)
+            }.buttonStyle(.borderedProminent).controlSize(.large)
+                .disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          password.isEmpty || (mode == .create && password.count < 8))
+        }.card(.white)
+    }
+
+    private var confirmation: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: "envelope.badge.shield.half.filled")
+                .font(.largeTitle).foregroundStyle(green).accessibilityHidden(true)
+            Text("Check your email").font(stageHeading(30, .largeTitle)).accessibilityAddTraits(.isHeader)
+            Text("If you’re new to StageSight, look for the confirmation link we sent to \(email). After confirming, sign in here or on the website.")
+                .foregroundStyle(.secondary)
+            Button("Back to sign in") {
+                switchMode(to: .signIn)
+            }.buttonStyle(.borderedProminent).controlSize(.large)
+        }.card(sage)
+    }
+
+    private func switchMode(to next: Mode) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) {
+            mode = next
+            password = ""
+            message = ""
+            checkEmail = false
+        }
+    }
+
+    private func submit() {
+        busy = true
+        message = ""
+        let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            defer { busy = false }
+            do {
+                if mode == .create {
+                    if try await studio.createAccount(email: address, password: password) {
+                        email = address
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { checkEmail = true }
+                    }
+                } else {
+                    try await studio.signIn(email: address, password: password)
+                }
+                password = ""
+            } catch { message = error.localizedDescription }
+        }
     }
 }
 

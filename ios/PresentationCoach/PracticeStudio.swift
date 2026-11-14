@@ -147,8 +147,50 @@ final class PracticeStudio: ObservableObject {
         return try await task.value.access_token
     }
 
+    /// Returns true when the user needs to confirm their email before signing in.
+    func createAccount(email: String, password: String) async throws -> Bool {
+        let (data, status) = try await accountResponse(
+            path: "signup", fields: ["email": email, "password": password]
+        )
+        guard (200..<300).contains(status) else {
+            let error = try? JSONDecoder().decode(AccountError.self, from: data)
+            switch error?.error_code {
+            case "weak_password":
+                throw StudioError("Choose a stronger password and try again.")
+            case "email_exists", "user_already_exists":
+                throw StudioError("This email already has an account. Try signing in.")
+            default:
+                if status == 429 { throw StudioError("Too many attempts. Wait a moment and try again.") }
+                throw StudioError("Couldn’t create your account. Check your email or try again later.")
+            }
+        }
+        if let session = try? JSONDecoder().decode(AccountSession.self, from: data) {
+            try setAccount(session, email: email)
+            showSignIn = false
+            return false
+        }
+        return true
+    }
+
+    private struct AccountError: Decodable {
+        let error_code: String?
+    }
+
     private func requestAccount(grant: String, fields: [String: String]) async throws -> AccountSession {
-        let url = URL(string: "https://ezstwuzfupvsdiuzvdvv.supabase.co/auth/v1/token?grant_type=" + grant)!
+        let (data, status) = try await accountResponse(path: "token?grant_type=" + grant, fields: fields)
+        guard status == 200 else {
+            let error = try? JSONDecoder().decode(AccountError.self, from: data)
+            if error?.error_code == "email_not_confirmed" {
+                throw StudioError("Confirm your email using the link in your inbox, then sign in.")
+            }
+            if status == 429 { throw StudioError("Too many attempts. Wait a moment and try again.") }
+            throw StudioError(grant == "password" ? "Couldn’t sign in. Check your email and password." : "Session expired. Sign out and sign in again.")
+        }
+        return try JSONDecoder().decode(AccountSession.self, from: data)
+    }
+
+    private func accountResponse(path: String, fields: [String: String]) async throws -> (Data, Int) {
+        let url = URL(string: "https://ezstwuzfupvsdiuzvdvv.supabase.co/auth/v1/" + path)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
@@ -156,11 +198,12 @@ final class PracticeStudio: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(fields)
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw StudioError(grant == "password" ? "Couldn’t sign in. Check your email and password." : "Session expired. Sign out and sign in again.")
+        guard let http = response as? HTTPURLResponse else {
+            throw StudioError("StageSight couldn’t reach the account service.")
         }
-        return try JSONDecoder().decode(AccountSession.self, from: data)
+        return (data, http.statusCode)
     }
+
     @Published private(set) var coachingCue = ""
     @Published private(set) var recordingDate: Date?
     @Published private(set) var isRecording = false
