@@ -11,5 +11,5 @@ GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_CFBundleDisplayName = Presentation Coach
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 SLASH = /
-BACKEND_BASE_URL = http:$(SLASH)$(SLASH)localhost:3000
+BACKEND_BASE_URL = https:$(SLASH)$(SLASH)stagesight.onrender.com
 INFOPLIST_FILE = PresentationCoach/Info.plist
