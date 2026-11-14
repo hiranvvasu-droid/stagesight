@@ -21,6 +21,7 @@ private struct Workspace: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
     @State private var showControls = false
+    @Environment(\.openURL) private var openURL
     private let ink = Color(red: 0.15, green: 0.23, blue: 0.19)
     private let green = Color(red: 0.23, green: 0.39, blue: 0.30)
     private let paper = Color(red: 0.96, green: 0.97, blue: 0.95)
@@ -99,8 +100,18 @@ private struct Workspace: View {
 
     private var practice: some View {
         Group {
+            if !studio.isRecording {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Practice studio", systemImage: "record.circle")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(green)
+                    Text("Take a breath. You’ve got this.").font(.title.bold())
+                    Text("Choose your camera and set up your rehearsal.")
+                        .foregroundStyle(.secondary)
+                }.card(sage)
+            }
             if !studio.isRecording || showControls {
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("Session setup").font(.headline)
                     TextField("Presentation title", text: $studio.title).textFieldStyle(.roundedBorder)
                     TextField("Outline or talking points", text: $studio.outline, axis: .vertical)
                         .textFieldStyle(.roundedBorder).lineLimit(2...5)
@@ -170,16 +181,24 @@ private struct Workspace: View {
                 Button(showControls ? "Hide controls" : "Show controls") { showControls.toggle() }
             }
             if !studio.message.isEmpty {
-                Text(studio.message).font(.callout).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(studio.message, systemImage: "info.circle").font(.callout)
+                    if studio.message.contains("in Settings"), let settings = URL(string: UIApplication.openSettingsURLString) {
+                        Button("Open Settings") { openURL(settings) }.font(.callout.bold())
+                    }
+                }.card(sage)
             }
             Button {
                 if studio.isRecording { studio.stop() }
                 else { showControls = false; Task { await studio.start() } }
             } label: {
-                Label(studio.isRecording ? "Stop and save" : "Start recording",
+                Label(studio.isBusy ? (studio.isRecording ? "Connecting camera…" : "Please wait…") : (studio.isRecording ? "Stop and save" : "Start recording"),
                       systemImage: studio.isRecording ? "stop.circle.fill" : "record.circle")
                     .frame(maxWidth: .infinity)
-            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(studio.isBusy || (!studio.isRecording && (!studio.consent || (studio.liveEnabled && studio.accountEmail == nil))))
+            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(studio.isBusy)
+            if !studio.isRecording && !studio.consent {
+                Text("Confirm recording consent above to start.").font(.footnote).foregroundStyle(.secondary)
+            }
             if !studio.isRecording && !studio.sessions.isEmpty {
                 Button("Review your sessions") { tab = 2 }
             }
@@ -313,25 +332,61 @@ private struct AccountSignIn: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Text("Use the same email and password as StageSight on the web.")
-                TextField("Email", text: $email)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("Password", text: $password).textContentType(.password)
-                if !message.isEmpty { Text(message).foregroundStyle(.secondary) }
-                Button(busy ? "Signing in…" : "Sign in") {
-                    busy = true
-                    Task {
-                        defer { password = ""; busy = false }
-                        do {
-                            try await studio.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
-                        } catch { message = error.localizedDescription }
-                    }
-                }.disabled(busy || email.isEmpty || password.isEmpty)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "record.circle.fill").font(.system(size: 42))
+                            .foregroundStyle(Color(red: 0.23, green: 0.39, blue: 0.30))
+                            .accessibilityHidden(true)
+                        Text("Welcome to StageSight").font(.largeTitle.bold())
+                        Text("Sign in with your StageSight web account to use live coaching and session reports.")
+                            .foregroundStyle(.secondary)
+                    }.card(Color(red: 0.91, green: 0.93, blue: 0.88))
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Email").font(.subheadline.weight(.semibold))
+                            TextField("Email address", text: $email)
+                                .keyboardType(.emailAddress)
+                                .textContentType(.username)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Password").font(.subheadline.weight(.semibold))
+                            SecureField("Your password", text: $password)
+                                .textContentType(.password)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        if !message.isEmpty {
+                            Label(message, systemImage: "exclamationmark.circle")
+                                .font(.footnote).foregroundStyle(.red)
+                        }
+                        Button {
+                            busy = true
+                            message = ""
+                            Task {
+                                defer { busy = false }
+                                do {
+                                    try await studio.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+                                    password = ""
+                                } catch { message = error.localizedDescription }
+                            }
+                        } label: {
+                            HStack {
+                                if busy { ProgressView().tint(.white) }
+                                Text(busy ? "Signing in…" : "Sign in")
+                            }.frame(maxWidth: .infinity)
+                        }.buttonStyle(.borderedProminent).controlSize(.large)
+                            .disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                    }.card(.white)
+                    Label("You’ll stay signed in on this iPhone.", systemImage: "lock.shield")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }.padding(20).frame(maxWidth: 520)
+                    .frame(maxWidth: .infinity)
             }
+            .background(Color(red: 0.96, green: 0.97, blue: 0.95))
+            .tint(Color(red: 0.23, green: 0.39, blue: 0.30))
             .navigationTitle("StageSight account")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

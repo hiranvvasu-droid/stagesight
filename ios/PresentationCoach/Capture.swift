@@ -27,11 +27,12 @@ final class PhoneCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private func configure(receive: @escaping @MainActor @Sendable (CaptureSample, Bool) -> Void,
                            interrupted: @escaping @MainActor @Sendable () -> Void) throws {
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let mic = AVCaptureDevice.default(.microphone, for: .audio, position: .unspecified) else {
+              let mic = AVCaptureDevice.default(for: .audio) else {
             throw StudioError("The built-in iPhone camera and microphone are required.")
         }
         let session = AVCaptureSession()
-        session.sessionPreset = .high
+        session.beginConfiguration()
+        session.sessionPreset = .hd1280x720
         let video = AVCaptureVideoDataOutput()
         video.alwaysDiscardsLateVideoFrames = true
         let audio = AVCaptureAudioDataOutput()
@@ -57,6 +58,7 @@ final class PhoneCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 Task { @MainActor in interrupted() }
             }
         }
+        session.commitConfiguration()
         session.startRunning()
         guard session.isRunning else { throw StudioError("Couldn’t start iPhone capture.") }
     }
@@ -93,6 +95,7 @@ final class SessionMovie {
     private var wroteVideo = false
     private var wroteAudio = false
     private var failure: Error?
+    var recordingError: Error? { failure ?? writer.error }
     var hasBothTracks: Bool { wroteVideo && wroteAudio }
 
     init(url: URL) throws {

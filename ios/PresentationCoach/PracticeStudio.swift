@@ -5,6 +5,7 @@ import Vision
 import MWDATCore
 import MWDATCamera
 import CoreImage
+import Security
 
 enum CaptureSource: String, CaseIterable, Identifiable, Codable {
     case phone = "iPhone"
@@ -62,39 +63,88 @@ final class PracticeStudio: ObservableObject {
     private var accountSession: AccountSession?
     private var accountGeneration = UUID()
 
-    private struct AccountSession: Decodable {
+    private struct AccountSession: Codable {
         let access_token: String
         let refresh_token: String
         let expires_in: Double
     }
+    private struct SavedAccount: Codable {
+        let session: AccountSession
+        let email: String
+        let expiresAt: Date
+    }
     private var accountExpiresAt = Date.distantPast
+    private var refreshTask: Task<AccountSession, Error>?
+    private let accountKey: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "com.stagesight.account",
+        kSecAttrAccount as String: "session"
+    ]
+
+    private func restoreAccount() {
+        var query = accountKey
+        query[kSecReturnData as String] = true
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let saved = try? JSONDecoder().decode(SavedAccount.self, from: data) else { return }
+        accountSession = saved.session
+        accountEmail = saved.email
+        accountExpiresAt = saved.expiresAt
+    }
 
     func signIn(email: String, password: String) async throws {
         let session = try await requestAccount(grant: "password", fields: ["email": email, "password": password])
-        setAccount(session)
-        accountEmail = email
+        try setAccount(session, email: email)
         showSignIn = false
     }
 
     func signOut() {
+        let status = SecItemDelete(accountKey as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            message = "Couldn’t remove your saved sign-in. Try again."
+            return
+        }
+        refreshTask?.cancel()
+        refreshTask = nil
         accountGeneration = UUID()
         accountSession = nil
         accountEmail = nil
     }
 
-    private func setAccount(_ session: AccountSession) {
+    private func setAccount(_ session: AccountSession, email: String) throws {
+        let expiry = Date().addingTimeInterval(session.expires_in)
+        let data = try JSONEncoder().encode(SavedAccount(session: session, email: email, expiresAt: expiry))
+        let values = [kSecValueData as String: data]
+        var status = SecItemUpdate(accountKey as CFDictionary, values as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = accountKey
+            item[kSecValueData as String] = data
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw StudioError("Couldn’t save your sign-in to Keychain.") }
         accountSession = session
-        accountExpiresAt = Date().addingTimeInterval(session.expires_in)
+        accountEmail = email
+        accountExpiresAt = expiry
     }
 
     private func accountToken() async throws -> String {
-        guard let session = accountSession else { throw StudioError("Sign in to StageSight to use coaching.") }
+        guard let session = accountSession, let email = accountEmail else {
+            throw StudioError("Sign in to StageSight to use coaching.")
+        }
         if accountExpiresAt.timeIntervalSinceNow > 60 { return session.access_token }
+        if let refreshTask { return try await refreshTask.value.access_token }
         let generation = accountGeneration
-        let renewed = try await requestAccount(grant: "refresh_token", fields: ["refresh_token": session.refresh_token])
-        guard generation == accountGeneration else { throw StudioError("Sign in again to use coaching.") }
-        setAccount(renewed)
-        return renewed.access_token
+        let task = Task {
+            let renewed = try await requestAccount(grant: "refresh_token", fields: ["refresh_token": session.refresh_token])
+            guard generation == accountGeneration else { throw StudioError("Sign in again to use coaching.") }
+            try setAccount(renewed, email: email)
+            return renewed
+        }
+        refreshTask = task
+        defer { if generation == accountGeneration { refreshTask = nil } }
+        return try await task.value.access_token
     }
 
     private func requestAccount(grant: String, fields: [String: String]) async throws -> AccountSession {
@@ -145,6 +195,7 @@ final class PracticeStudio: ObservableObject {
     private var finishing = false
 
     init() {
+        restoreAccount()
         do {
             try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
             let index = storage.appending(path: "sessions.json")
@@ -192,18 +243,20 @@ final class PracticeStudio: ObservableObject {
         message = ""
         guard consent else { message = "Confirm recording consent before starting."; return }
         let selected = source
-        // Stop any review playback before taking ownership of the iPhone audio session.
         if selected == .phone {
-            guard await AVCaptureDevice.requestAccess(for: .video),
-                  await AVCaptureDevice.requestAccess(for: .audio) else {
-                message = "Allow camera and microphone access in Settings to record."
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                message = "Camera access is off. Allow StageSight to use the camera in Settings."
+                return
+            }
+            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                message = "Microphone access is off. Allow StageSight to use the microphone in Settings."
                 return
             }
         }
         var speechAllowed = false
         if speechEnabled {
             speechAllowed = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+                SFSpeechRecognizer.requestAuthorization { @Sendable status in continuation.resume(returning: status == .authorized) }
             }
         }
         do {
@@ -225,7 +278,7 @@ final class PracticeStudio: ObservableObject {
                 speechRequest = request
                 speechFinished = false
                 let id = sessionID
-                speechTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                speechTask = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
                     let words = result?.bestTranscription.segments.map {
                         SpokenWord(text: $0.substring, start: $0.timestamp, duration: $0.duration)
                     }
@@ -278,9 +331,12 @@ final class PracticeStudio: ObservableObject {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled, let self, self.isRecording,
                       self.writer?.hasBothTracks != true else { return }
-                self.message = selected == .glasses
+                if let failure = self.writer?.recordingError {
+                    self.message = failure.localizedDescription
+                } else { self.message = selected == .glasses
                     ? "StageSight couldn’t receive both camera and microphone from the glasses."
                     : "StageSight couldn’t receive both iPhone camera and microphone."
+                }
                 self.stop()
             }
         } catch {
