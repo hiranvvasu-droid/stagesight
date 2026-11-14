@@ -206,6 +206,12 @@ final class PracticeStudio: ObservableObject {
     }
 
     @Published private(set) var glassesRegistered = false
+    @Published private(set) var glassesSetupMessage = ""
+
+    func resetCaptureStatus() {
+        message = ""
+        glassesSetupMessage = ""
+    }
 
     func refreshGlassesRegistration() {
         if let wearables = try? configureWearables() {
@@ -214,19 +220,20 @@ final class PracticeStudio: ObservableObject {
     }
 
     func register() async {
-        guard !isBusy, !isRecording else { return }
+        guard source == .glasses, !isBusy, !isRecording else { return }
+        glassesSetupMessage = ""
         isBusy = true
         defer { isBusy = false }
         do {
             let wearables = try configureWearables()
             if wearables.registrationState == .registered {
                 glassesRegistered = true
-                message = "Meta AI setup is complete."
+                glassesSetupMessage = "Meta AI setup is complete."
             } else {
                 try await wearables.startRegistration()
-                message = "Finish connecting in the Meta AI app."
+                glassesSetupMessage = "Finish connecting in the Meta AI app."
             }
-        } catch { message = error.localizedDescription }
+        } catch { glassesSetupMessage = error.localizedDescription }
     }
 
     func handle(_ url: URL) async {
@@ -235,9 +242,8 @@ final class PracticeStudio: ObservableObject {
             let wearables = try configureWearables()
             guard try await wearables.handleUrl(url) else { return }
             glassesRegistered = wearables.registrationState == .registered
-            source = .glasses
-            message = glassesRegistered ? "Meta AI setup is complete." : "Finish setup in Meta AI, then return to StageSight."
-        } catch { message = error.localizedDescription }
+            glassesSetupMessage = glassesRegistered ? "Meta AI setup is complete." : "Finish setup in Meta AI, then return to StageSight."
+        } catch { glassesSetupMessage = error.localizedDescription }
     }
 
     private func configureWearables() throws -> any WearablesInterface {

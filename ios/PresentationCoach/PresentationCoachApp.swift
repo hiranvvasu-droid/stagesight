@@ -239,6 +239,7 @@ private struct Workspace: View {
     }
 
     private func advance(to next: PracticeStep) {
+        if next == .source { studio.resetCaptureStatus() }
         withAnimation(.easeInOut(duration: 0.22)) { step = next }
     }
 
@@ -269,6 +270,10 @@ private struct Workspace: View {
                 } label: {
                     Label("Set up in Meta AI", systemImage: "arrow.up.right")
                 }.buttonStyle(.bordered)
+                if !studio.glassesSetupMessage.isEmpty {
+                    Text(studio.glassesSetupMessage).font(stageBody(15, .subheadline))
+                        .foregroundStyle(.secondary)
+                }
             }
         }.card(sage)
     }
@@ -309,6 +314,7 @@ private struct Workspace: View {
     private func sourceCard(_ source: CaptureSource, icon: String, subtitle: String) -> some View {
         let featured = source == .glasses
         return Button {
+            studio.resetCaptureStatus()
             studio.source = source
             if source == .glasses { studio.refreshGlassesRegistration() }
             advance(to: .setup)
@@ -387,7 +393,7 @@ private struct Workspace: View {
     }
 
     private func newPractice() {
-        if !studio.isRecording && !studio.isBusy { step = .source }
+        if !studio.isRecording && !studio.isBusy { advance(to: .source) }
         tab = 1
     }
 
