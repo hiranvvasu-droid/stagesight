@@ -41,6 +41,11 @@
 	<string>Record your presentation and measure delivery.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Transcribe your presentation on this device.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/Manrope.ttf</string>
+		<string>Fonts/DMSans.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

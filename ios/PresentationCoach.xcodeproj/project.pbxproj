@@ -10,7 +10,7 @@
         A10000000000000000000004 = {isa = XCBuildConfiguration; name = Release; buildSettings = { CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; }; };
         A10000000000000000000005 = {isa = PBXGroup; children = (A10000000000000000000007, A10000000000000000000017, A10000000000000000000006); sourceTree = "<group>"; };
         A10000000000000000000006 = {isa = PBXGroup; children = (A10000000000000000000008); name = Products; sourceTree = "<group>"; };
-        A10000000000000000000007 = {isa = PBXGroup; children = (A1000000000000000000000E, A1000000000000000000001C, A10000000000000000000019, A10000000000000000000018); path = PresentationCoach; sourceTree = "<group>"; };
+        A10000000000000000000007 = {isa = PBXGroup; children = (A1000000000000000000000E, A1000000000000000000001E, A1000000000000000000001C, A10000000000000000000019, A10000000000000000000018); path = PresentationCoach; sourceTree = "<group>"; };
         A10000000000000000000008 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = PresentationCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
         A10000000000000000000009 = {
             isa = PBXNativeTarget;
@@ -35,7 +35,7 @@
         A10000000000000000000012 = {isa = XCSwiftPackageProductDependency; package = A10000000000000000000016; productName = MWDATCamera; };
         A10000000000000000000013 = {isa = PBXBuildFile; productRef = A10000000000000000000011; };
         A10000000000000000000014 = {isa = PBXBuildFile; productRef = A10000000000000000000012; };
-        A10000000000000000000015 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        A10000000000000000000015 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A1000000000000000000001F); runOnlyForDeploymentPostprocessing = 0; };
         A10000000000000000000016 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/meta/meta-wearables-dat-ios.git"; requirement = {kind = exactVersion; version = 1.0.1; }; };
         A10000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = PresentationCoach.xcconfig; sourceTree = SOURCE_ROOT; };
         A10000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeStudio.swift; sourceTree = "<group>"; };
@@ -44,6 +44,8 @@
         A1000000000000000000001B = {isa = PBXBuildFile; fileRef = A10000000000000000000019; };
         A1000000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCoach.swift; sourceTree = "<group>"; };
         A1000000000000000000001D = {isa = PBXBuildFile; fileRef = A1000000000000000000001C; };
+        A1000000000000000000001E = {isa = PBXFileReference; lastKnownFileType = folder; path = Fonts; sourceTree = "<group>"; };
+        A1000000000000000000001F = {isa = PBXBuildFile; fileRef = A1000000000000000000001E; };
     };
     rootObject = A10000000000000000000001;
 }

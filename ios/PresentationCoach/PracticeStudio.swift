@@ -205,6 +205,14 @@ final class PracticeStudio: ObservableObject {
         } catch { message = "Couldn’t load saved sessions. \(error.localizedDescription)" }
     }
 
+    @Published private(set) var glassesRegistered = false
+
+    func refreshGlassesRegistration() {
+        if let wearables = try? configureWearables() {
+            glassesRegistered = wearables.registrationState == .registered
+        }
+    }
+
     func register() async {
         guard !isBusy, !isRecording else { return }
         isBusy = true
@@ -212,7 +220,8 @@ final class PracticeStudio: ObservableObject {
         do {
             let wearables = try configureWearables()
             if wearables.registrationState == .registered {
-                message = "StageSight is registered with Meta AI."
+                glassesRegistered = true
+                message = "Meta AI setup is complete."
             } else {
                 try await wearables.startRegistration()
                 message = "Finish connecting in the Meta AI app."
@@ -223,8 +232,11 @@ final class PracticeStudio: ObservableObject {
     func handle(_ url: URL) async {
         guard url.scheme == "stagesight" else { return }
         do {
-            _ = try await configureWearables().handleUrl(url)
-            message = "Select Meta glasses and start a recording."
+            let wearables = try configureWearables()
+            guard try await wearables.handleUrl(url) else { return }
+            glassesRegistered = wearables.registrationState == .registered
+            source = .glasses
+            message = glassesRegistered ? "Meta AI setup is complete." : "Finish setup in Meta AI, then return to StageSight."
         } catch { message = error.localizedDescription }
     }
 

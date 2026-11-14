@@ -21,6 +21,7 @@ private struct Workspace: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
     @State private var showControls = false
+    @State private var showOptions = false
     @Environment(\.openURL) private var openURL
     private let ink = Color(red: 0.15, green: 0.23, blue: 0.19)
     private let green = Color(red: 0.23, green: 0.39, blue: 0.30)
@@ -37,8 +38,13 @@ private struct Workspace: View {
                 .tabItem { Label("My sessions", systemImage: "rectangle.stack") }.tag(2)
         }
         .tint(green)
+        .font(stageBody(15, .body))
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, studio.isRecording { studio.stop() }
+            if phase == .active, tab == 1 { studio.refreshGlassesRegistration() }
+        }
+        .onChange(of: tab) { _, value in
+            if value == 1 { studio.refreshGlassesRegistration() }
         }
     }
 
@@ -55,8 +61,26 @@ private struct Workspace: View {
             .navigationTitle(name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Label("StageSight", systemImage: "record.circle").font(.headline).foregroundStyle(ink)
+                ToolbarItem(placement: .topBarLeading) {
+                    Label("StageSight", systemImage: "record.circle.fill")
+                        .font(stageHeading(19, .headline)).foregroundStyle(ink)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if let email = studio.accountEmail {
+                        Menu {
+                            Text(email)
+                            Button("Sign out", role: .destructive) { studio.signOut() }
+                                .disabled(studio.isRecording || studio.isBusy)
+                        } label: {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title3).foregroundStyle(green)
+                                .accessibilityLabel("StageSight account")
+                        }
+                    } else {
+                        Button("Sign in") { studio.showSignIn = true }
+                            .font(stageBody(14, .subheadline).weight(.semibold))
+                            .foregroundStyle(green)
+                    }
                 }
             }
         }
@@ -64,7 +88,7 @@ private struct Workspace: View {
 
     private var overview: some View {
         Group {
-            Text("Find your voice.\nOwn your stage.").font(.largeTitle.bold())
+            Text("Find your voice.\nOwn your stage.").font(stageHeading(34, .largeTitle))
                 .accessibilityAddTraits(.isHeader)
             Text("A space to practice, reflect, and grow into your next great presentation.")
                 .foregroundStyle(.secondary)
@@ -72,7 +96,7 @@ private struct Workspace: View {
                 Image(systemName: "mic.circle.fill")
                     .font(.system(size: 58)).foregroundStyle(green)
                     .accessibilityHidden(true)
-                Text("Great presentations begin with practice.").font(.title2.bold())
+                Text("Great presentations begin with practice.").font(stageHeading(22, .title2))
                 Button { tab = 1 } label: {
                     Label("Start a practice session", systemImage: "arrow.up.right")
                 }.buttonStyle(.borderedProminent)
@@ -81,15 +105,7 @@ private struct Workspace: View {
                 metric("Practice sessions", studio.sessions.count.formatted())
                 metric("Time well spent", "\(Int(studio.sessions.reduce(0) { $0 + $1.duration } / 60)) min")
             }
-            if let email = studio.accountEmail {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(email).font(.subheadline)
-                    Button("Sign out") { studio.signOut() }.disabled(studio.isRecording || studio.isBusy)
-                }.card(.white)
-            } else {
-                Button("Sign in for AI coaching") { studio.showSignIn = true }.buttonStyle(.bordered)
-            }
-            Text("Your recordings").font(.title2.bold())
+            Text("Your recordings").font(stageHeading(22, .title2))
             if studio.sessions.isEmpty {
                 Text("Record your first practice session to see it here.").card(.white)
             } else {
@@ -100,44 +116,65 @@ private struct Workspace: View {
 
     private var practice: some View {
         Group {
-            if !studio.isRecording {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Practice studio", systemImage: "record.circle")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(green)
-                    Text("Take a breath. You’ve got this.").font(.title.bold())
-                    Text("Choose your camera and set up your rehearsal.")
-                        .foregroundStyle(.secondary)
-                }.card(sage)
-            }
             if !studio.isRecording || showControls {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Session setup").font(.headline)
-                    TextField("Presentation title", text: $studio.title).textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("PRACTICE STUDIO").font(stageBody(11, .caption).weight(.semibold))
+                        .tracking(1.8).foregroundStyle(green)
+                    Text("Take a breath.\nYou’ve got this.").font(stageHeading(34, .largeTitle))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Choose how to capture your rehearsal.").foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Capture source").font(stageHeading(20, .title3))
+                    sourceCard(.glasses, icon: "eyeglasses", subtitle: "Hands-free video and audio")
+                    sourceCard(.phone, icon: "iphone", subtitle: "This iPhone’s camera and microphone")
+                    if studio.source == .glasses {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(studio.glassesRegistered ? "Meta AI setup complete" : "First time using Meta glasses?",
+                                  systemImage: studio.glassesRegistered ? "checkmark.circle.fill" : "link.circle")
+                                .font(stageHeading(16, .headline)).foregroundStyle(green)
+                            if !studio.glassesRegistered {
+                                Text("Finish setup in Meta AI, then return to StageSight.")
+                                    .font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                                Button {
+                                    Task { await studio.register() }
+                                } label: {
+                                    Label("Set up in Meta AI", systemImage: "arrow.up.right")
+                                }.buttonStyle(.bordered)
+                            }
+                        }.card(sage)
+                    }
+                }.disabled(studio.isRecording || studio.isBusy)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Session setup").font(stageHeading(20, .title3))
+                    TextField("Presentation title", text: $studio.title).stageField()
                     TextField("Outline or talking points", text: $studio.outline, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(2...5)
-                    Picker("Capture source", selection: $studio.source) {
-                        ForEach(CaptureSource.allCases) { Text($0.rawValue).tag($0) }
-                    }.pickerStyle(.segmented)
+                        .lineLimit(2...5).stageField()
                     Picker("Practice type", selection: $studio.practiceType) {
                         ForEach(["Pitch practice", "Product walkthrough", "Storytelling", "Keynote"], id: \.self) {
                             Text($0)
                         }
                     }
-                    Toggle("Audience direction overlays", isOn: $studio.overlays)
-                    Toggle("On-device transcription", isOn: $studio.speechEnabled)
-                    Toggle("Live AI coaching", isOn: $studio.liveEnabled)
-                    if studio.liveEnabled {
-                        Text("Live coaching sends audio from your selected microphone to OpenAI.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        if studio.accountEmail == nil {
-                            Button("Sign in to enable coaching") { studio.showSignIn = true }
-                        }
-                    }
-                    Toggle("Everyone being recorded knows and has agreed", isOn: $studio.consent)
-                    if studio.source == .glasses {
-                        Button("Connect Meta glasses") { Task { await studio.register() } }
+                    Divider()
+                    DisclosureGroup("Coaching and overlays", isExpanded: $showOptions) {
+                        VStack(alignment: .leading, spacing: 13) {
+                            Toggle("Audience direction overlays", isOn: $studio.overlays)
+                            Toggle("On-device transcription", isOn: $studio.speechEnabled)
+                            Toggle("Live AI coaching", isOn: $studio.liveEnabled)
+                            if studio.liveEnabled {
+                                Text("Live coaching sends audio from your selected microphone to OpenAI.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                if studio.accountEmail == nil {
+                                    Button("Sign in to enable coaching") { studio.showSignIn = true }
+                                }
+                            }
+                        }.padding(.top, 12)
                     }
                 }.disabled(studio.isRecording || studio.isBusy).card(.white)
+                Toggle("Everyone being recorded knows and has agreed", isOn: $studio.consent)
+                    .font(stageBody(14, .subheadline))
+                    .disabled(studio.isRecording || studio.isBusy).card(.white)
             }
             if let frame = studio.frame {
                 GeometryReader { geometry in
@@ -205,6 +242,32 @@ private struct Workspace: View {
         }
     }
 
+    private func sourceCard(_ source: CaptureSource, icon: String, subtitle: String) -> some View {
+        let selected = studio.source == source
+        return Button {
+            studio.source = source
+            if source == .glasses { studio.refreshGlassesRegistration() }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.title2.weight(.medium)).foregroundStyle(green)
+                    .frame(width: 46, height: 46)
+                    .background(selected ? .white : sage, in: RoundedRectangle(cornerRadius: 13))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(source.rawValue).font(stageHeading(17, .headline))
+                    Text(subtitle).font(stageBody(13, .footnote)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 6)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3).foregroundStyle(green).accessibilityHidden(true)
+            }
+            .padding(14).foregroundStyle(ink)
+            .background(selected ? sage : .white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(green.opacity(selected ? 0.55 : 0.14)) }
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private var library: some View {
         Group {
             if studio.sessions.isEmpty {
@@ -225,7 +288,7 @@ private struct Workspace: View {
                     SessionReview(session: session, studio: studio)
                 } label: {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(session.title).font(.headline)
+                        Text(session.title).font(stageHeading(17, .headline))
                         Text("\(session.date.formatted(date: .abbreviated, time: .shortened)) · \(session.source.rawValue)")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }.card(.white)
@@ -237,7 +300,7 @@ private struct Workspace: View {
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.title3.bold()).monospacedDigit()
+            Text(value).font(stageHeading(20, .title3)).monospacedDigit()
         }.card(.white)
     }
 }
@@ -275,10 +338,10 @@ private struct SessionReview: View {
                         PointMark(x: .value("Seconds", point.second), y: .value("Words per minute", point.wpm))
                     }.frame(height: 120)
                 }
-                Text("Transcript").font(.headline)
+                Text("Transcript").font(stageHeading(17, .headline))
                 Text(session.transcript.isEmpty ? "No transcript was captured. Your recording is saved." : session.transcript)
                     .textSelection(.enabled)
-                Text("Coaching report").font(.headline)
+                Text("Coaching report").font(stageHeading(17, .headline))
                 if let report = current.report {
                     Text(report).textSelection(.enabled)
                 } else if !session.transcript.isEmpty {
@@ -338,7 +401,7 @@ private struct AccountSignIn: View {
                         Image(systemName: "record.circle.fill").font(.system(size: 42))
                             .foregroundStyle(Color(red: 0.23, green: 0.39, blue: 0.30))
                             .accessibilityHidden(true)
-                        Text("Welcome to StageSight").font(.largeTitle.bold())
+                        Text("Welcome to StageSight").font(stageHeading(34, .largeTitle))
                         Text("Sign in with your StageSight web account to use live coaching and session reports.")
                             .foregroundStyle(.secondary)
                     }.card(Color(red: 0.91, green: 0.93, blue: 0.88))
@@ -385,6 +448,7 @@ private struct AccountSignIn: View {
                 }.padding(20).frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
             }
+            .font(stageBody(15, .body))
             .background(Color(red: 0.96, green: 0.97, blue: 0.95))
             .tint(Color(red: 0.23, green: 0.39, blue: 0.30))
             .navigationTitle("StageSight account")
@@ -394,5 +458,21 @@ private struct AccountSignIn: View {
                 }
             }
         }.interactiveDismissDisabled(busy)
+    }
+}
+
+private func stageHeading(_ size: CGFloat, _ style: Font.TextStyle) -> Font {
+    .custom("Manrope-Regular", size: size, relativeTo: style).weight(.bold)
+}
+
+private func stageBody(_ size: CGFloat, _ style: Font.TextStyle) -> Font {
+    .custom("DMSans-Regular", size: size, relativeTo: style)
+}
+
+private extension View {
+    func stageField() -> some View {
+        padding(12)
+            .background(Color(red: 0.97, green: 0.98, blue: 0.97), in: RoundedRectangle(cornerRadius: 11))
+            .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(.black.opacity(0.09)) }
     }
 }
