@@ -20,4 +20,4 @@ The server currently serves a health endpoint. Realtime credentials and report g
 
 Open `ios/PresentationCoach.xcodeproj` in Xcode and select the PresentationCoach scheme. Xcode resolves Meta Wearables Device Access Toolkit 1.0.1 via Swift Package Manager. The app target links MWDATCore and MWDATCamera. SwiftUI, AVFoundation, Vision, and Speech come from Apple's SDK.
 
-The app starts with a placeholder screen. For a physical iPhone, select your Apple Developer team under Signing & Capabilities. Glasses pairing and capture still need implementation and device testing.
+The app starts with a placeholder screen. For a physical iPhone, confirm the selected Apple Developer team under Signing & Capabilities. Glasses pairing and capture still need implementation and device testing.
