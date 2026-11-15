@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
@@ -15,6 +15,9 @@ const firebaseAuth = getAuth(initializeApp({ projectId: 'stagesight-ccf4a' }));
 const openai = apiKey ? new OpenAI({ apiKey, maxRetries: 0, timeout: 25000 }) : null;
 let nextReport = 0;
 let nextLiveSession = 0;
+let transcriptionInProgress = false;
+let nextTranscription = 0;
+const maxAudioBytes = 24_000_000;
 
 function send(response, status, data) {
   response.writeHead(status, {
@@ -22,6 +25,48 @@ function send(response, status, data) {
     'Cache-Control': 'no-store',
   });
   response.end(JSON.stringify(data));
+}
+
+async function transcribe(request, response) {
+  if (request.headers['content-type'] !== 'audio/mp4') {
+    return send(response, 415, { error: 'Send an M4A audio file.' });
+  }
+  if (Number(request.headers['content-length']) > maxAudioBytes) {
+    request.resume();
+    return send(response, 413, { error: 'This recording is too long for cloud transcription.' });
+  }
+  if (transcriptionInProgress || Date.now() < nextTranscription) {
+    request.resume();
+    return send(response, 429, { error: 'Transcription is busy. Try again shortly.' });
+  }
+  transcriptionInProgress = true;
+  try {
+    let bytes = 0;
+    const chunks = [];
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+      bytes += chunk.length;
+      if (bytes > maxAudioBytes) {
+        request.resume();
+        return send(response, 413, { error: 'This recording is too long for cloud transcription.' });
+      }
+      chunks.push(chunk);
+    }
+    const audio = Buffer.concat(chunks, bytes);
+    if (bytes < 12 || audio.subarray(4, 8).toString() !== 'ftyp') {
+      return send(response, 400, { error: 'No readable M4A audio was uploaded.' });
+    }
+    nextTranscription = Date.now() + 15000;
+    const file = await toFile(audio, 'session.m4a', { type: 'audio/mp4' });
+    const result = await openai.audio.transcriptions.create({
+      file, model: 'gpt-transcribe',
+    }, { timeout: 90000 });
+    if (!result.text?.trim()) {
+      return send(response, 422, { error: 'No speech was found in the recording.' });
+    }
+    return send(response, 200, { transcript: result.text.trim() });
+  } finally {
+    transcriptionInProgress = false;
+  }
 }
 
 async function reportInput(request) {
@@ -60,7 +105,8 @@ createServer(async (request, response) => {
   }
   const report = request.method === 'POST' && request.url === '/reports';
   const live = request.method === 'POST' && request.url === '/live-session';
-  if (!report && !live) return send(response, 404, { error: 'Not found' });
+  const transcription = request.method === 'POST' && request.url === '/transcriptions';
+  if (!report && !live && !transcription) return send(response, 404, { error: 'Not found' });
   if (!openai) return send(response, 503, { error: 'Coaching is unavailable' });
 
   const authorization = request.headers.authorization ?? '';
@@ -87,6 +133,7 @@ createServer(async (request, response) => {
       }
       if (!account.ok) return send(response, 503, { error: 'Account verification unavailable' });
     }
+    if (transcription) return await transcribe(request, response);
     const input = report ? await reportInput(request) : null;
     if (report && !input) return send(response, 400, { error: 'Provide a valid transcript' });
     const now = Date.now();
