@@ -9,6 +9,7 @@
     "start": "node --env-file-if-exists=.env server.js"
   },
   "dependencies": {
+    "firebase-admin": "^14.5.1",
     "openai": "^7.57.0"
   }
 }
