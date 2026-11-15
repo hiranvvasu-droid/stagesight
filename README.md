@@ -1,25 +1,21 @@
-# Presentation Coach
+# StageSight
 
-Fresh SwiftUI app and Node.js backend for Presentation Coach.
+StageSight helps speakers rehearse, record, and review presentations on iPhone and in the browser.
 
-## Local server
+| Directory | What it contains |
+| --- | --- |
+| [`ios/`](ios/) | The SwiftUI app for iPhone and compatible Meta glasses. |
+| [`server/`](server/) | The iOS app's Node.js backend for live coaching, transcription, and reports. |
+| [`web/`](web/) | The browser app and its separate Node.js backend. See the [web README](web/README.md). |
 
-From the repository root:
+## iOS and its backend
 
-```sh
-cd server
-npm ci
-npm start
-```
+Open `ios/PresentationCoach.xcodeproj` and select the **PresentationCoach** scheme. Choose your Apple Developer team under **Signing & Capabilities** for device builds. To enable Google Sign-In, follow the [local Firebase setup](ios/PresentationCoach/Firebase/README.txt).
 
-The server loads `.env` when present. On a fresh checkout, copy `.env.example` to `.env` and enter your OpenAI API key there. Keep the key on the server. The default port is 3000. Check the server with `curl http://localhost:3000/health`.
+For local backend development, run `npm ci` and `npm start` in `server/`. Set `OPENAI_API_KEY` in the server environment or in a local `.env` based on `server/.env.example`. The local health endpoint is `http://localhost:3000/health`. The iOS app's deployed backend URL is set in `ios/PresentationCoach.xcconfig`.
 
-The server currently serves a health endpoint. Realtime credentials and report generation are future steps.
+## Web app
 
-## iOS app
+In `web/`, run `npm run check`, `npm test`, and `npm start`. See [web deployment instructions](web/DEPLOY.md) for environment and account setup. The web app was imported from [Dhairya19793/stagesight-web at commit 13dc1d0](https://github.com/Dhairya19793/stagesight-web/commit/13dc1d004c0c7a522a1ba46120fd3c715a6be7a0).
 
-Open `ios/PresentationCoach.xcodeproj` in Xcode and select the PresentationCoach scheme. Xcode resolves Meta Wearables Device Access Toolkit 1.0.1 via Swift Package Manager. The app target links MWDATCore and MWDATCamera. SwiftUI, AVFoundation, Vision, and Speech come from Apple's SDK.
-
-The app starts with a placeholder screen. For a physical iPhone, confirm the selected Apple Developer team under Signing & Capabilities. Glasses pairing and capture still need implementation and device testing.
-
-The app's **Check Server** button calls the backend's `/health` endpoint. Start the local server before trying it in the iPhone Simulator. After deploying to Render, set `BACKEND_BASE_URL` in `ios/PresentationCoach.xcconfig` to the Render URL, using the `https:$(SLASH)$(SLASH)your-service.onrender.com` form so Xcode preserves both slashes. Set `OPENAI_API_KEY` in the Render service's Environment tab.
+The two services deploy independently. If moving the web service to this repository in Render, set its **Root Directory** to `web` and preserve its existing environment variables. The iOS backend uses `server`.

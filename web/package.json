@@ -1,0 +1,12 @@
+{
+  "name": "stagesight",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private presentation practice with recording and coaching",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "start": "node server.cjs",
+    "check": "node --check server.cjs && node --check ai.cjs && node --check dist/app.js && node --check dist/cloud.js && node --check dist/ai-client.js && node --check dist/vision.js && node --check dist/motion.js && node --check dist/scroll-concept.js && node --check dist/session-actions.js",
+    "test": "node --test ai.test.cjs session-actions.test.cjs"
+  }
+}
