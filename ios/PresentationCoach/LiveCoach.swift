@@ -10,14 +10,22 @@ final class LiveCoach {
                                        channels: 1, interleaved: true)!
     private var converter: AVAudioConverter?
 
-    func start(base: URL, token: String, cue: @escaping @MainActor (String) -> Void) async throws {
+    func start(base: URL, token: String, official: Bool, firebase: Bool, cue: @escaping @MainActor (String) -> Void) async throws {
         var request = URLRequest(url: base.appending(path: "live-session"))
         request.httpMethod = "POST"
         request.timeoutInterval = 100
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        if firebase { request.setValue("firebase", forHTTPHeaderField: "X-StageSight-Auth") }
+        request.setValue(official ? "official" : "practice", forHTTPHeaderField: "X-StageSight-Mode")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw StudioError("Live coaching couldn’t connect. Sign in again and retry.")
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200: break
+        case 401, 403:
+            throw StudioError("Live coaching couldn’t verify your sign-in.")
+        case 429:
+            throw StudioError("Live coaching is busy. Try again in a minute.")
+        default:
+            throw StudioError("The coaching server couldn’t start a live session.")
         }
         struct Secret: Decodable { let value: String }
         let secret = try JSONDecoder().decode(Secret.self, from: data)
@@ -51,11 +59,12 @@ final class LiveCoach {
                         switch type {
                         case "session.updated", "session.created":
                             cue("Live coaching connected.")
-                        case "input_audio_buffer.committed" where Date().timeIntervalSince(lastCue) >= 25:
+                        case "input_audio_buffer.committed" where Date().timeIntervalSince(lastCue) >= (official ? 60 : 25):
                             lastCue = Date()
                             try await Self.send(["type": "response.create", "response": ["max_output_tokens": 120]], through: socket)
                         case "response.output_text.done":
-                            if let text = json["text"] as? String, !text.isEmpty { cue(text) }
+                            if let text = json["text"] as? String, !text.isEmpty,
+                               text.trimmingCharacters(in: .whitespacesAndNewlines) != "NO_CUE" { cue(text) }
                         case "error":
                             cue("Live coaching returned an error.")
                         default:

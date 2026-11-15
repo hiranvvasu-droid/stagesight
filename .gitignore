@@ -8,3 +8,7 @@ xcuserdata/
 *.xcuserstate
 .DS_Store
 recordings/
+
+# Local Firebase setup (see ios/PresentationCoach/Firebase/README.txt).
+/ios/Firebase.local.xcconfig
+/ios/PresentationCoach/Firebase/GoogleService-Info.plist
